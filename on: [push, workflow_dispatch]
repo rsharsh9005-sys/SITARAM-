@@ -1,0 +1,383 @@
+name: Auto Build StudyFlow APK
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      - name: Generate StudyFlow Source Code
+        shell: python
+        run: |
+          import os
+
+          files = {
+              'settings.gradle.kts': """
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "StudyFlow"
+          include(":app")
+          """,
+
+              'build.gradle.kts': """
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+              id("com.google.devtools.ksp") version "1.9.24-1.0.20" apply false
+          }
+          """,
+
+              'app/build.gradle.kts': """
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("com.google.devtools.ksp")
+          }
+          android {
+              namespace = "com.studyflow.app"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.studyflow.app"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+              buildFeatures {
+                  compose = true
+              }
+              composeOptions {
+                  kotlinCompilerExtensionVersion = "1.5.14"
+              }
+          }
+          dependencies {
+              val composeBom = platform("androidx.compose:compose-bom:2024.04.01")
+              implementation(composeBom)
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+              implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+              implementation("androidx.activity:activity-compose:1.9.0")
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-graphics")
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.material:material-icons-extended")
+              implementation("androidx.navigation:navigation-compose:2.7.7")
+              val roomVersion = "2.6.1"
+              implementation("androidx.room:room-runtime:$roomVersion")
+              implementation("androidx.room:room-ktx:$roomVersion")
+              ksp("androidx.room:room-compiler:$roomVersion")
+              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+          }
+          """,
+
+              'app/src/main/AndroidManifest.xml': """<?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <application
+                  android:name=".StudyFlowApplication"
+                  android:allowBackup="false"
+                  android:label="StudyFlow"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+                  <activity
+                      android:name=".ui.MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTop">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".service.StopwatchService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse">
+                      <property
+                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                          android:value="Offline study stopwatch timer" />
+                  </service>
+              </application>
+          </manifest>
+          """,
+
+              'app/src/main/res/values/strings.xml': """<resources><string name="app_name">StudyFlow</string></resources>""",
+
+              'app/src/main/res/drawable/ic_notification.xml': """<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFFFF" android:pathData="M15,1H9v2h6V1zM11,14h2V8h-2V14zM19.03,7.39l1.42,-1.42c-0.45,-0.51 -0.9,-0.97 -1.41,-1.41L17.62,5.98C16.07,4.74 14.12,4 12,4c-4.97,0 -9,4.03 -9,9s4.03,9 9,9s9,-4.03 9,-9C21,9.88 20.26,7.93 19.03,7.39zM12,20c-3.87,0 -7,-3.13 -7,-7s3.13,-7 7,-7s7,3.13 7,7S15.87,20 12,20z"/></vector>""",
+
+              'app/src/main/res/drawable/ic_play.xml': """<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFFFF" android:pathData="M8,5v14l11,-7z"/></vector>""",
+
+              'app/src/main/res/drawable/ic_pause.xml': """<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFFFF" android:pathData="M6,19h4V5H6v14zm8,-14v14h4V5h-4z"/></vector>""",
+
+              'app/src/main/res/drawable/ic_stop.xml': """<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFFFF" android:pathData="M6,6h12v12H6z"/></vector>""",
+
+              'app/src/main/java/com/studyflow/app/data/SessionEntity.kt': """package com.studyflow.app.data
+          import androidx.room.Entity
+          import androidx.room.PrimaryKey
+          @Entity(tableName = "study_sessions")
+          data class SessionEntity(
+              @PrimaryKey(autoGenerate = true) val id: Long = 0,
+              val startTimeEpochMs: Long,
+              val endTimeEpochMs: Long,
+              val durationSeconds: Long,
+              val dateString: String
+          )
+          """,
+
+              'app/src/main/java/com/studyflow/app/data/SessionDao.kt': """package com.studyflow.app.data
+          import androidx.room.*
+          import kotlinx.coroutines.flow.Flow
+          @Dao
+          interface SessionDao {
+              @Insert(onConflict = OnConflictStrategy.REPLACE)
+              suspend fun insertSession(session: SessionEntity): Long
+              @Query("SELECT * FROM study_sessions ORDER BY startTimeEpochMs DESC")
+              fun getAllSessions(): Flow<List<SessionEntity>>
+              @Query("SELECT * FROM study_sessions WHERE dateString = :dateString ORDER BY startTimeEpochMs DESC")
+              fun getSessionsForDate(dateString: String): Flow<List<SessionEntity>>
+              @Query("SELECT COALESCE(SUM(durationSeconds), 0) FROM study_sessions WHERE dateString = :dateString")
+              fun getTotalDurationForDate(dateString: String): Flow<Long>
+              @Query("SELECT COUNT(id) FROM study_sessions WHERE dateString = :dateString")
+              fun getSessionCountForDate(dateString: String): Flow<Int>
+              @Query("DELETE FROM study_sessions")
+              suspend fun clearAll()
+          }
+          """,
+
+              'app/src/main/java/com/studyflow/app/data/StudyDatabase.kt': """package com.studyflow.app.data
+          import android.content.Context
+          import androidx.room.*
+          @Database(entities = [SessionEntity::class], version = 1, exportSchema = false)
+          abstract class StudyDatabase : RoomDatabase() {
+              abstract fun sessionDao(): SessionDao
+              companion object {
+                  @Volatile private var INSTANCE: StudyDatabase? = null
+                  fun getDatabase(context: Context): StudyDatabase {
+                      return INSTANCE ?: synchronized(this) {
+                          Room.databaseBuilder(context.applicationContext, StudyDatabase::class.java, "studyflow.db")
+                              .fallbackToDestructiveMigration().build().also { INSTANCE = it }
+                      }
+                  }
+              }
+          }
+          """,
+
+              'app/src/main/java/com/studyflow/app/data/StudyRepository.kt': """package com.studyflow.app.data
+          import kotlinx.coroutines.flow.Flow
+          import java.time.LocalDate
+          import java.time.ZoneId
+          class StudyRepository(private val dao: SessionDao) {
+              fun getAllSessions(): Flow<List<SessionEntity>> = dao.getAllSessions()
+              fun getTodaySessions(): Flow<List<SessionEntity>> = dao.getSessionsForDate(LocalDate.now(ZoneId.systemDefault()).toString())
+              fun getTodayTotalDuration(): Flow<Long> = dao.getTotalDurationForDate(LocalDate.now(ZoneId.systemDefault()).toString())
+              fun getTodaySessionCount(): Flow<Int> = dao.getSessionCountForDate(LocalDate.now(ZoneId.systemDefault()).toString())
+              fun getSessionsForDate(date: String): Flow<List<SessionEntity>> = dao.getSessionsForDate(date)
+              suspend fun clearHistory() = dao.clearAll()
+              suspend fun recordCompletedSession(startTime: Long, endTime: Long, durationSecs: Long) {
+                  if (durationSecs <= 0) return
+                  val today = LocalDate.now(ZoneId.systemDefault()).toString()
+                  dao.insertSession(SessionEntity(startTimeEpochMs = startTime, endTimeEpochMs = endTime, durationSeconds = durationSecs, dateString = today))
+              }
+          }
+          """,
+
+              'app/src/main/java/com/studyflow/app/service/StopwatchStateHolder.kt': """package com.studyflow.app.service
+          import android.content.Context
+          import android.os.SystemClock
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+          import kotlinx.coroutines.flow.asStateFlow
+          enum class StopwatchStatus { IDLE, RUNNING, PAUSED }
+          data class StopwatchSnapshot(
+              val status: StopwatchStatus = StopwatchStatus.IDLE,
+              val accumulatedDurationMs: Long = 0L,
+              val currentSessionElapsedMs: Long = 0L
+          )
+          object StopwatchStateHolder {
+              private val _snapshot = MutableStateFlow(StopwatchSnapshot())
+              val snapshot: StateFlow<StopwatchSnapshot> = _snapshot.asStateFlow()
+              private var baseElapsed: Long = 0L
+              private var accumulated: Long = 0L
+              private var startTimeEpoch: Long = 0L
+              fun init(context: Context) {}
+              @Synchronized fun start() {
+                  if (_snapshot.value.status == StopwatchStatus.RUNNING) return
+                  if (_snapshot.value.status == StopwatchStatus.IDLE) {
+                      accumulated = 0L
+                      startTimeEpoch = System.currentTimeMillis()
+                  }
+                  baseElapsed = SystemClock.elapsedRealtime()
+                  _snapshot.value = StopwatchSnapshot(StopwatchStatus.RUNNING, accumulated, accumulated)
+              }
+              @Synchronized fun pause() {
+                  if (_snapshot.value.status != StopwatchStatus.RUNNING) return
+                  accumulated += (SystemClock.elapsedRealtime() - baseElapsed)
+                  _snapshot.value = StopwatchSnapshot(StopwatchStatus.PAUSED, accumulated, accumulated)
+              }
+              @Synchronized fun updateLive() {
+                  if (_snapshot.value.status == StopwatchStatus.RUNNING) {
+                      val live = accumulated + (SystemClock.elapsedRealtime() - baseElapsed)
+                      _snapshot.value = _snapshot.value.copy(currentSessionElapsedMs = live)
+                  }
+              }
+              @Synchronized fun stop(): Triple<Long, Long, Long>? {
+                  if (_snapshot.value.status == StopwatchStatus.IDLE) return null
+                  if (_snapshot.value.status == StopwatchStatus.RUNNING) {
+                      accumulated += (SystemClock.elapsedRealtime() - baseElapsed)
+                  }
+                  val start = startTimeEpoch
+                  val end = System.currentTimeMillis()
+                  val total = accumulated / 1000L
+                  _snapshot.value = StopwatchSnapshot(StopwatchStatus.IDLE)
+                  accumulated = 0L
+                  return Triple(start, end, total)
+              }
+          }
+          """,
+
+              'app/src/main/java/com/studyflow/app/service/StopwatchService.kt': """package com.studyflow.app.service
+          import android.app.*
+          import android.content.Intent
+          import android.content.pm.ServiceInfo
+          import android.os.Build
+          import android.os.IBinder
+          import android.os.SystemClock
+          import androidx.core.app.NotificationCompat
+          import androidx.core.app.ServiceCompat
+          import com.studyflow.app.R
+          import com.studyflow.app.StudyFlowApplication
+          import com.studyflow.app.ui.MainActivity
+          import kotlinx.coroutines.*
+          class StopwatchService : Service() {
+              companion object {
+                  const val ACTION_START = "ACTION_START"
+                  const val ACTION_PAUSE = "ACTION_PAUSE"
+                  const val ACTION_RESUME = "ACTION_RESUME"
+                  const val ACTION_STOP = "ACTION_STOP"
+                  const val NOTIFICATION_ID = 2001
+              }
+              private val scope = CoroutineScope(Dispatchers.Main + Job())
+              private var tickerJob: Job? = null
+              override fun onBind(intent: Intent?): IBinder? = null
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  when (intent?.action) {
+                      ACTION_START, ACTION_RESUME -> {
+                          StopwatchStateHolder.start()
+                          showNotification()
+                          tickerJob?.cancel()
+                          tickerJob = scope.launch {
+                              while (isActive) {
+                                  StopwatchStateHolder.updateLive()
+                                  delay(1000)
+                              }
+                          }
+                      }
+                      ACTION_PAUSE -> {
+                          tickerJob?.cancel()
+                          StopwatchStateHolder.pause()
+                          showNotification()
+                      }
+                      ACTION_STOP -> {
+                          tickerJob?.cancel()
+                          val res = StopwatchStateHolder.stop()
+                          if (res != null) {
+                              scope.launch(Dispatchers.IO) {
+                                  StudyFlowApplication.repository.recordCompletedSession(res.first, res.second, res.third)
+                              }
+                          }
+                          ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                          stopSelf()
+                      }
+                  }
+                  return START_STICKY
+              }
+              private fun showNotification() {
+                  val snap = StopwatchStateHolder.snapshot.value
+                  val isRunning = snap.status == StopwatchStatus.RUNNING
+                  val openIntent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+                  val toggleIntent = PendingIntent.getService(this, 1, Intent(this, StopwatchService::class.java).apply { action = if (isRunning) ACTION_PAUSE else ACTION_RESUME }, PendingIntent.FLAG_IMMUTABLE)
+                  val stopIntent = PendingIntent.getService(this, 2, Intent(this, StopwatchService::class.java).apply { action = ACTION_STOP }, PendingIntent.FLAG_IMMUTABLE)
+                  val builder = NotificationCompat.Builder(this, StudyFlowApplication.CHANNEL_ID)
+                      .setSmallIcon(R.drawable.ic_notification)
+                      .setContentTitle("StudyFlow Timer")
+                      .setContentIntent(openIntent)
+                      .setOngoing(isRunning)
+                      .setOnlyAlertOnce(true)
+                  if (isRunning) {
+                      builder.setUsesChronometer(true)
+                      builder.setBase(SystemClock.elapsedRealtime() - snap.accumulatedDurationMs)
+                      builder.setContentText("Focusing...")
+                      builder.addAction(R.drawable.ic_pause, "PAUSE", toggleIntent)
+                  } else {
+                      builder.setUsesChronometer(false)
+                      val s = snap.accumulatedDurationMs / 1000
+                      builder.setContentText("PAUSED (" + (s / 60) + "m " + (s % 60) + "s)")
+                      builder.addAction(R.drawable.ic_play, "RESUME", toggleIntent)
+                  }
+                  builder.addAction(R.drawable.ic_stop, "FINISH", stopIntent)
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                      ServiceCompat.startForeground(this, NOTIFICATION_ID, builder.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                  } else {
+                      startForeground(NOTIFICATION_ID, builder.build())
+                  }
+              }
+              override fun onDestroy() {
+                  tickerJob?.cancel()
+                  scope.cancel()
+                  super.onDestroy()
+              }
+          }
+          """,
+
+              'app/src/main/java/com/studyflow/app/StudyFlowApplication.kt': """package com.studyflow.app
+          import android.app.Application
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.os.Build
+          import com.studyflow.app.data.StudyDatabase
+          import com.studyflow.app.data.StudyRepository
+          class StudyFlowApplication : Application() {
+              companion object {
+                  const val CHANNEL_ID = "studyflow_channel"
+                  lateinit var repository: StudyRepository
+                      private set
+              }
+              override fun onCreate() {
+                  super.onCreate()
+                  repository = StudyRepository(StudyDatabase.getDatabase(this).sessionDao())
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      val channel = NotificationChannel(CHANNEL_ID, "StudyFlow Active Timer", NotificationManager.IMPORTANCE_LOW)
+                      (getSystemSe
